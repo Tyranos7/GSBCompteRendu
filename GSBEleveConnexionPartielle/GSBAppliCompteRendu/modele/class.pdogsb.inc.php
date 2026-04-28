@@ -48,7 +48,10 @@ class PdoGsb{
 		return PdoGsb::$monPdoGsb;  
 	}
 
-
+	public static function getPdo() {
+		return self::$monPdo;
+	}
+	
 /**------------------------------------------------------------------------------------------------------------- */
 /**---------------                   LES TRANSACTIONS                                -------------------------- */
 /**------------------------------------------------------------------------------------------------------------- */
@@ -251,6 +254,17 @@ public function getLesMedicaments(){
     $stmt = PdoGsb::$monPdo->query($req);
     return $stmt->fetchAll();
 }
+
+public function getMedicament($medDepotLegal) {
+	$req = "SELECT m.MED_DEPOTLEGAL, m.MED_NOMCOMMERCIAL, m.FAM_CODE, m.MED_COMPOSITION, 
+			m.MED_EFFETS, m.MED_CONTREINDIC, f.FAM_LIBELLE
+			FROM MEDICAMENT m
+			LEFT JOIN FAMILLE f ON m.FAM_CODE = f.FAM_CODE
+			WHERE m.MED_DEPOTLEGAL = :med";
+	$stmt = self::$monPdo->prepare($req);
+	$stmt->execute([':med' => $medDepotLegal]);
+	return $stmt->fetch(PDO::FETCH_ASSOC);
+}
 /**------------------------------------------------------------------------------------------------------------- */
 /**---------------                   LES PRATICIENS                                 -------------------------- */
 /**------------------------------------------------------------------------------------------------------------- */
@@ -261,24 +275,509 @@ public function getLesPraticiens(){
 	$stmt = self::$monPdo->query($req);
 	return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+public function getLesPraticienTypes(){
+	$req = "SELECT TYP_CODE, TYP_LIBELLE, TYP_LIEU FROM TYPE_PRATICIEN ORDER BY TYP_LIBELLE";
+	$stmt = self::$monPdo->query($req);
+	return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function ajouterPraticien($praPraticienNum, $praNom, $praPrenom, $praAdresse, $praCp, $praVille, $praCoefNotoriete, $praCoefConfiance, $typCode) {
+	$req = "INSERT INTO PRATICIEN 
+			(PRA_NUM, PRA_NOM, PRA_PRENOM, PRA_ADRESSE, PRA_CP, PRA_VILLE, 
+			 PRA_COEFNOTORIETE, PRA_COEFCONFIANCE, TYP_CODE)
+			VALUES 
+			(:pranum, :pranom, :praprenom, :praadresse, :pracp, :praville, 
+			 :pracoefnot, :pracoefconf, :typcode)";
+	$stmt = self::$monPdo->prepare($req);
+	$stmt->execute([
+		':pranum' => $praPraticienNum,
+		':pranom' => $praNom,
+		':praprenom' => $praPrenom,
+		':praadresse' => $praAdresse,
+		':pracp' => $praCp,
+		':praville' => $praVille,
+		':pracoefnot' => $praCoefNotoriete,
+		':pracoefconf' => $praCoefConfiance,
+		':typcode' => $typCode
+	]);
+}
+public function getPraticien($praPraticienNum) {
+	$req = "SELECT PRA_NUM, PRA_NOM, PRA_PRENOM, PRA_ADRESSE, PRA_CP, PRA_VILLE, 
+			PRA_COEFNOTORIETE, PRA_COEFCONFIANCE, TYP_CODE
+			FROM PRATICIEN 
+			WHERE PRA_NUM = :num";
+	$stmt = self::$monPdo->prepare($req);
+	$stmt->execute([':num' => $praPraticienNum]);
+	return $stmt->fetch(PDO::FETCH_ASSOC);
+}
 
 /**------------------------------------------------------------------------------------------------------------- */
 /**---------------                   LES COMPTES-RENDUS                                -------------------------- */
 /**------------------------------------------------------------------------------------------------------------- */
 		
-	// A compléter avec toutes fonctions nécessaires 
-// Ajouter un compte-rendu
-public function ajouterCompteRendu($idVisiteur,$idPraticien,$dateVisite,$motif,$motifAutre,$bilan,$niveauConfiance,$dateSaisie,$etat){
-	
-	
+public function ajouterCompteRendu(
+    $idVisiteur,
+    $idPraticien,
+    $dateVisite,
+    $motif,
+    $motifAutre,
+    $bilan,
+    $niveauConfiance,
+    $dateSaisie,
+    $saisieDef,
+    $docOfferte,
+    $praticienRempl = null,
+    $produitsPresente = [],
+    $echantillons = [],
+    $qtes = []
+) {
+    // --- Génération du RAP_NUM ---
+    $stmt = self::$monPdo->prepare(
+        "SELECT MAX(RAP_NUM) FROM RAPPORT_VISITE WHERE COL_MATRICULE = :col"
+    );
+    $stmt->execute([':col' => $idVisiteur]);
+    $rapNum = $stmt->fetchColumn() + 1;
+
+    // --- Insertion du rapport ---
+    // Conversion des chaînes vides en NULL pour les champs nullable
+    $praticienRempl = (empty($praticienRempl)) ? null : $praticienRempl;
+    $motifAutre = (empty($motifAutre)) ? null : $motifAutre;
+    
+    $stmt = self::$monPdo->prepare(
+        "INSERT INTO RAPPORT_VISITE
+        (COL_MATRICULE, RAP_NUM, PRA_NUM, PRA_NUM_REMPLACANT, RAP_DATE_VISITE,
+         RAP_DATE_SAISIE, RAP_BILAN, RAP_MOTIF_AUTRE, MOT_CODE,
+         RAP_DOCUMENTATION, RAP_SAISIEDEFINITIVE)
+        VALUES
+        (:col, :rap, :pra, :remp, :dv, :ds, :bilan, :motifAutre, :motif, :doc, :def)"
+    );
+
+    $stmt->execute([
+        ':col'        => $idVisiteur,
+        ':rap'        => $rapNum,
+        ':pra'        => $idPraticien,
+        ':remp'       => $praticienRempl,
+        ':dv'         => $dateVisite,
+        ':ds'         => $dateSaisie,
+        ':bilan'      => $bilan,
+        ':motifAutre' => $motifAutre,
+        ':motif'      => $motif,
+        ':doc'        => $docOfferte,
+        ':def'        => $saisieDef
+    ]);
+
+    // --- Insertion des produits présentés ---
+    foreach($produitsPresente as $prod){
+        if(!empty($prod)){
+            $stmt = self::$monPdo->prepare(
+                "INSERT INTO PRESENTER (MED_DEPOTLEGAL, COL_MATRICULE, RAP_NUM)
+                 VALUES (:med, :col, :rap)"
+            );
+            $stmt->execute([
+                ':med' => $prod,
+                ':col' => $idVisiteur,
+                ':rap' => $rapNum
+            ]);
+        }
+    }
+
+    // --- Insertion des échantillons ---
+    foreach($echantillons as $index => $medDepot){
+        $qte = $qtes[$index] ?? 0;
+        if(!empty($medDepot) && $qte > 0){
+            $stmt = self::$monPdo->prepare(
+                "INSERT INTO OFFRIR (COL_MATRICULE, RAP_NUM, MED_DEPOTLEGAL, OFF_QTE)
+                 VALUES (:col, :rap, :med, :qte)"
+            );
+            $stmt->execute([
+                ':col' => $idVisiteur,
+                ':rap' => $rapNum,
+                ':med' => $medDepot,
+                ':qte' => $qte
+            ]);
+        }
+    }
 }
 
-// Récupérer les comptes-rendus d’un collaborateur
-public function getCompteRenduParCollaborateur($idVisiteur){
-    $sql = "SELECT * FROM RAPPORT_VISITE WHERE VIS_MATRICULE = :idVisiteur ORDER BY RAP_DATEVISITE DESC";
-    $stmt = $this->monPdo->prepare($sql);
-    $stmt->execute([':idVisiteur'=>$idVisiteur]);
-    return $stmt->fetchAll();
+public function getCompteRenduParCollaborateur($idVisiteur, $rapNum = null){
+    $sql = "SELECT * FROM RAPPORT_VISITE WHERE COL_MATRICULE = :idVisiteur";
+    $params = [':idVisiteur' => $idVisiteur];
+
+    if ($rapNum !== null) {
+        $sql .= " AND RAP_NUM = :rapNum";
+        $params[':rapNum'] = $rapNum;
+    }
+
+    $sql .= " ORDER BY RAP_DATE_VISITE DESC";
+
+    $stmt = self::$monPdo->prepare($sql);  // <- correction ici
+    $stmt->execute($params);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
-}	
+public function getLesMotifs() {
+    $req = "SELECT MOT_CODE as id, MOT_LIBELLE as libelle FROM MOTIF ORDER BY MOT_LIBELLE";
+    $stmt = self::$monPdo->query($req);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+public function getRapportsNonValides($idCollaborateur) {
+    $sql = "
+        SELECT rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NOM, p.PRA_PRENOM
+        FROM RAPPORT_VISITE rv
+        INNER JOIN PRATICIEN p ON rv.PRA_NUM = p.PRA_NUM
+        WHERE rv.COL_MATRICULE = :col
+          AND rv.RAP_SAISIEDEFINITIVE = 0
+        ORDER BY rv.RAP_DATE_VISITE DESC
+    ";
+    $stmt = self::$monPdo->prepare($sql);
+    $stmt->execute([':col' => $idCollaborateur]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getRapportsPeriode($idCollaborateur, $dateDebut, $dateFin, $praPraticienNum = null) {
+    $sql = "
+        SELECT 
+            rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, p.PRA_NOM, p.PRA_PRENOM, 
+            m.MOT_LIBELLE, GROUP_CONCAT(DISTINCT med.MED_NOMCOMMERCIAL SEPARATOR ', ') as medicaments
+        FROM RAPPORT_VISITE rv
+        INNER JOIN PRATICIEN p ON rv.PRA_NUM = p.PRA_NUM
+        INNER JOIN MOTIF m ON rv.MOT_CODE = m.MOT_CODE
+        LEFT JOIN PRESENTER pr ON rv.COL_MATRICULE = pr.COL_MATRICULE AND rv.RAP_NUM = pr.RAP_NUM
+        LEFT JOIN MEDICAMENT med ON pr.MED_DEPOTLEGAL = med.MED_DEPOTLEGAL
+        WHERE rv.COL_MATRICULE = :col
+          AND rv.RAP_DATE_VISITE >= :dateDebut
+          AND rv.RAP_DATE_VISITE <= :dateFin
+          AND rv.RAP_SAISIEDEFINITIVE = 1
+    ";
+    
+    if($praPraticienNum){
+        $sql .= " AND p.PRA_NUM = :pra";
+    }
+    
+    $sql .= " GROUP BY rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, p.PRA_NOM, p.PRA_PRENOM, m.MOT_LIBELLE
+              ORDER BY rv.RAP_DATE_VISITE DESC";
+    
+    $stmt = self::$monPdo->prepare($sql);
+    $params = [':col' => $idCollaborateur, ':dateDebut' => $dateDebut, ':dateFin' => $dateFin];
+    if($praPraticienNum){
+        $params[':pra'] = $praPraticienNum;
+    }
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+public function getRapport($idCollaborateur, $rapNum) {
+    $req = "
+        SELECT 
+            r.*,
+            p.PRA_NUM, p.PRA_NOM, p.PRA_PRENOM, p.PRA_COEFCONFIANCE,
+            m.MOT_LIBELLE
+        FROM RAPPORT_VISITE r
+        JOIN PRATICIEN p ON r.PRA_NUM = p.PRA_NUM
+        LEFT JOIN MOTIF m ON r.MOT_CODE = m.MOT_CODE
+        WHERE r.COL_MATRICULE = :col
+          AND r.RAP_NUM = :rap
+    ";
+
+    $stmt = PdoGsb::$monPdo->prepare($req);
+    $stmt->execute([
+        ':col' => $idCollaborateur,
+        ':rap' => $rapNum
+    ]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+public function getProduitsPresente($idCollaborateur, $rapNum) {
+    $req = "SELECT MED_DEPOTLEGAL as id
+            FROM PRESENTER 
+            WHERE COL_MATRICULE = :col AND RAP_NUM = :rap 
+            ORDER BY MED_DEPOTLEGAL";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':col' => $idCollaborateur, ':rap' => $rapNum]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getEchantillons($idCollaborateur, $rapNum) {
+    $req = "SELECT MED_DEPOTLEGAL as id, OFF_QTE 
+            FROM OFFRIR 
+            WHERE COL_MATRICULE = :col AND RAP_NUM = :rap
+            ORDER BY MED_DEPOTLEGAL";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':col' => $idCollaborateur, ':rap' => $rapNum]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getProduitsPresenDetail($idCollaborateur, $rapNum) {
+    $req = "SELECT m.MED_DEPOTLEGAL, m.MED_NOMCOMMERCIAL
+            FROM PRESENTER p
+            INNER JOIN MEDICAMENT m ON p.MED_DEPOTLEGAL = m.MED_DEPOTLEGAL
+            WHERE p.COL_MATRICULE = :col AND p.RAP_NUM = :rap";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':col' => $idCollaborateur, ':rap' => $rapNum]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getEchantillonsDetail($idCollaborateur, $rapNum) {
+    $req = "SELECT m.MED_DEPOTLEGAL, m.MED_NOMCOMMERCIAL, o.OFF_QTE
+            FROM OFFRIR o
+            INNER JOIN MEDICAMENT m ON o.MED_DEPOTLEGAL = m.MED_DEPOTLEGAL
+            WHERE o.COL_MATRICULE = :col AND o.RAP_NUM = :rap
+            ORDER BY m.MED_NOMCOMMERCIAL";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':col' => $idCollaborateur, ':rap' => $rapNum]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function modifierCompteRendu(
+    $idCollaborateur,
+    $rapNum,
+    $idPraticien,
+    $dateVisite,
+    $motif,
+    $motifAutre,
+    $bilan,
+    $niveauConfiance,
+    $dateSaisie,
+    $saisieDef,
+    $docOfferte,
+    $praticienRempl = null,
+    $produitsPresente = [],
+    $echantillons = [],
+    $qtes = []
+) {
+    // --- Mise à jour du rapport ---
+    // Conversion des chaînes vides en null
+    $praticienRempl = (empty($praticienRempl)) ? null : $praticienRempl;
+    $motifAutre = (empty($motifAutre)) ? null : $motifAutre;
+    
+    $stmt = self::$monPdo->prepare(
+        "UPDATE RAPPORT_VISITE
+        SET PRA_NUM = :pra, PRA_NUM_REMPLACANT = :remp, RAP_DATE_VISITE = :dv,
+            RAP_DATE_SAISIE = :ds, RAP_BILAN = :bilan, RAP_MOTIF_AUTRE = :motifAutre, 
+            MOT_CODE = :motif, RAP_DOCUMENTATION = :doc, RAP_SAISIEDEFINITIVE = :def
+        WHERE COL_MATRICULE = :col AND RAP_NUM = :rap"
+    );
+
+    $stmt->execute([
+        ':col'        => $idCollaborateur,
+        ':rap'        => $rapNum,
+        ':pra'        => $idPraticien,
+        ':remp'       => $praticienRempl,
+        ':dv'         => $dateVisite,
+        ':ds'         => $dateSaisie,
+        ':bilan'      => $bilan,
+        ':motifAutre' => $motifAutre,
+        ':motif'      => $motif,
+        ':doc'        => $docOfferte,
+        ':def'        => $saisieDef
+    ]);
+
+    // --- Suppression et réinsertion des produits présentés ---
+    $stmt = self::$monPdo->prepare(
+        "DELETE FROM PRESENTER WHERE COL_MATRICULE = :col AND RAP_NUM = :rap"
+    );
+    $stmt->execute([':col' => $idCollaborateur, ':rap' => $rapNum]);
+
+    foreach($produitsPresente as $prod){
+        if(!empty($prod)){
+            $stmt = self::$monPdo->prepare(
+                "INSERT INTO PRESENTER (MED_DEPOTLEGAL, COL_MATRICULE, RAP_NUM)
+                 VALUES (:med, :col, :rap)"
+            );
+            $stmt->execute([
+                ':med' => $prod,
+                ':col' => $idCollaborateur,
+                ':rap' => $rapNum
+            ]);
+        }
+    }
+
+    // --- Suppression et réinsertion des échantillons ---
+    $stmt = self::$monPdo->prepare(
+        "DELETE FROM OFFRIR WHERE COL_MATRICULE = :col AND RAP_NUM = :rap"
+    );
+    $stmt->execute([':col' => $idCollaborateur, ':rap' => $rapNum]);
+
+    foreach($echantillons as $index => $medDepot){
+        $qte = $qtes[$index] ?? 0;
+        if(!empty($medDepot) && $qte > 0){
+            $stmt = self::$monPdo->prepare(
+                "INSERT INTO OFFRIR (COL_MATRICULE, RAP_NUM, MED_DEPOTLEGAL, OFF_QTE)
+                 VALUES (:col, :rap, :med, :qte)"
+            );
+            $stmt->execute([
+                ':col' => $idCollaborateur,
+                ':rap' => $rapNum,
+                ':med' => $medDepot,
+                ':qte' => $qte
+            ]);
+        }
+    }
+}
+public function getDelegateRegion($idDelegue) {
+    $req = "SELECT REG_CODE FROM delegue_regional WHERE DEL_MATRICULE = :id";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':id' => $idDelegue]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $result ? $result['REG_CODE'] : null;
+}
+
+public function getVisitorsInRegion($regCode) {
+    $req = "
+        SELECT DISTINCT c.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM
+        FROM collaborateur c
+        INNER JOIN travailler t ON c.COL_MATRICULE = t.COL_MATRICULE
+        WHERE t.REG_CODE = :reg AND t.DATE_FIN IS NULL
+        ORDER BY c.COL_NOM, c.COL_PRENOM
+    ";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':reg' => $regCode]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getRapportsRegion($regCode, $dateDebut, $dateFin, $idCol = null) {
+    $sql = "
+        SELECT DISTINCT
+            rv.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM,
+            rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, p.PRA_NOM, p.PRA_PRENOM, 
+            m.MOT_LIBELLE, GROUP_CONCAT(DISTINCT med.MED_NOMCOMMERCIAL SEPARATOR ', ') as medicaments
+        FROM RAPPORT_VISITE rv
+        INNER JOIN collaborateur c ON rv.COL_MATRICULE = c.COL_MATRICULE
+        INNER JOIN travailler t ON c.COL_MATRICULE = t.COL_MATRICULE AND t.REG_CODE = :reg AND t.DATE_FIN IS NULL
+        INNER JOIN PRATICIEN p ON rv.PRA_NUM = p.PRA_NUM
+        INNER JOIN MOTIF m ON rv.MOT_CODE = m.MOT_CODE
+        LEFT JOIN PRESENTER pr ON rv.COL_MATRICULE = pr.COL_MATRICULE AND rv.RAP_NUM = pr.RAP_NUM
+        LEFT JOIN MEDICAMENT med ON pr.MED_DEPOTLEGAL = med.MED_DEPOTLEGAL
+        WHERE rv.RAP_DATE_VISITE >= :dateDebut
+          AND rv.RAP_DATE_VISITE <= :dateFin
+          AND rv.RAP_SAISIEDEFINITIVE = 1
+    ";
+    
+    if($idCol){
+        $sql .= " AND rv.COL_MATRICULE = :col";
+    }
+    
+    $sql .= " GROUP BY rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, rv.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM, p.PRA_NOM, p.PRA_PRENOM, m.MOT_LIBELLE
+              ORDER BY rv.RAP_DATE_VISITE DESC";
+    
+    $stmt = self::$monPdo->prepare($sql);
+    $params = [':reg' => $regCode, ':dateDebut' => $dateDebut, ':dateFin' => $dateFin];
+    if($idCol){
+        $params[':col'] = $idCol;
+    }
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getResponsibleSector($idResponsable) {
+    $req = "SELECT SEC_CODE FROM responsable WHERE RES_MATRICULE = :id";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':id' => $idResponsable]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $result ? $result['SEC_CODE'] : null;
+}
+
+public function getRegionsInSector($secCode) {
+    $req = "
+        SELECT DISTINCT r.REG_CODE, r.REG_NOM
+        FROM region r
+        WHERE r.SEC_CODE = :sec
+        ORDER BY r.REG_NOM
+    ";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':sec' => $secCode]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getRapportsSector($secCode, $dateDebut, $dateFin, $regCode = null, $idCol = null) {
+    $sql = "
+        SELECT DISTINCT
+            rv.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM,
+            rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, p.PRA_NOM, p.PRA_PRENOM, 
+            m.MOT_LIBELLE, r.REG_NOM, GROUP_CONCAT(DISTINCT med.MED_NOMCOMMERCIAL SEPARATOR ', ') as medicaments
+        FROM RAPPORT_VISITE rv
+        INNER JOIN collaborateur c ON rv.COL_MATRICULE = c.COL_MATRICULE
+        INNER JOIN travailler t ON c.COL_MATRICULE = t.COL_MATRICULE AND t.DATE_FIN IS NULL
+        INNER JOIN region r ON t.REG_CODE = r.REG_CODE AND r.SEC_CODE = :sec
+        INNER JOIN PRATICIEN p ON rv.PRA_NUM = p.PRA_NUM
+        INNER JOIN MOTIF m ON rv.MOT_CODE = m.MOT_CODE
+        LEFT JOIN PRESENTER pr ON rv.COL_MATRICULE = pr.COL_MATRICULE AND rv.RAP_NUM = pr.RAP_NUM
+        LEFT JOIN MEDICAMENT med ON pr.MED_DEPOTLEGAL = med.MED_DEPOTLEGAL
+        WHERE rv.RAP_DATE_VISITE >= :dateDebut
+          AND rv.RAP_DATE_VISITE <= :dateFin
+          AND rv.RAP_SAISIEDEFINITIVE = 1
+    ";
+    
+    if($regCode){
+        $sql .= " AND r.REG_CODE = :reg";
+    }
+    
+    if($idCol){
+        $sql .= " AND rv.COL_MATRICULE = :col";
+    }
+    
+    $sql .= " GROUP BY rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, rv.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM, p.PRA_NOM, p.PRA_PRENOM, m.MOT_LIBELLE, r.REG_NOM
+              ORDER BY rv.RAP_DATE_VISITE DESC";
+    
+    $stmt = self::$monPdo->prepare($sql);
+    $params = [':sec' => $secCode, ':dateDebut' => $dateDebut, ':dateFin' => $dateFin];
+    if($regCode){
+        $params[':reg'] = $regCode;
+    }
+    if($idCol){
+        $params[':col'] = $idCol;
+    }
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getRapportsPeriodeSector($secCode, $dateDebut, $dateFin, $idCol = null) {
+    $sql = "
+        SELECT DISTINCT
+            rv.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM,
+            rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, p.PRA_NOM, p.PRA_PRENOM, 
+            m.MOT_LIBELLE, r.REG_NOM, GROUP_CONCAT(DISTINCT med.MED_NOMCOMMERCIAL SEPARATOR ', ') as medicaments
+        FROM RAPPORT_VISITE rv
+        INNER JOIN collaborateur c ON rv.COL_MATRICULE = c.COL_MATRICULE
+        INNER JOIN travailler t ON c.COL_MATRICULE = t.COL_MATRICULE AND t.DATE_FIN IS NULL
+        INNER JOIN region r ON t.REG_CODE = r.REG_CODE AND r.SEC_CODE = :sec
+        INNER JOIN PRATICIEN p ON rv.PRA_NUM = p.PRA_NUM
+        INNER JOIN MOTIF m ON rv.MOT_CODE = m.MOT_CODE
+        LEFT JOIN PRESENTER pr ON rv.COL_MATRICULE = pr.COL_MATRICULE AND rv.RAP_NUM = pr.RAP_NUM
+        LEFT JOIN MEDICAMENT med ON pr.MED_DEPOTLEGAL = med.MED_DEPOTLEGAL
+        WHERE rv.RAP_DATE_VISITE >= :dateDebut
+          AND rv.RAP_DATE_VISITE <= :dateFin
+          AND rv.RAP_SAISIEDEFINITIVE = 1
+    ";
+    
+    if($idCol){
+        $sql .= " AND rv.COL_MATRICULE = :col";
+    }
+    
+    $sql .= " GROUP BY rv.RAP_NUM, rv.RAP_DATE_VISITE, p.PRA_NUM, rv.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM, p.PRA_NOM, p.PRA_PRENOM, m.MOT_LIBELLE, r.REG_NOM
+              ORDER BY rv.RAP_DATE_VISITE DESC";
+    
+    $stmt = self::$monPdo->prepare($sql);
+    $params = [':sec' => $secCode, ':dateDebut' => $dateDebut, ':dateFin' => $dateFin];
+    if($idCol){
+        $params[':col'] = $idCol;
+    }
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+public function getCollaboratorsInSector($secCode) {
+    $req = "
+        SELECT DISTINCT c.COL_MATRICULE, c.COL_NOM, c.COL_PRENOM
+        FROM collaborateur c
+        INNER JOIN travailler t ON c.COL_MATRICULE = t.COL_MATRICULE
+        INNER JOIN region r ON t.REG_CODE = r.REG_CODE AND r.SEC_CODE = :sec
+        WHERE t.DATE_FIN IS NULL
+        ORDER BY c.COL_NOM, c.COL_PRENOM
+    ";
+    $stmt = self::$monPdo->prepare($req);
+    $stmt->execute([':sec' => $secCode]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+}
+
 ?>

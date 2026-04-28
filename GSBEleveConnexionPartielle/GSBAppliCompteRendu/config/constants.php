@@ -1,6 +1,10 @@
-<?php 
-
-// Fichier ou seront stockées toutes les constantes utiles dans le site
+<?php
+/**
+ * FICHIER DE CONFIGURATION - Constantes de l'application
+ * - URLs de base et chemins des ressources
+ * - Chemins des répertoires de la structure MVC
+ * - Paramètres de connexion à la base de données
+ */
 
 
 //L"url du site

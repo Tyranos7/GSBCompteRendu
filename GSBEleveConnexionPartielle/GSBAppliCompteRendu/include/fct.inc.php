@@ -26,6 +26,7 @@ function connecterVisiteur($matricule,$nom,$prenom){
 	$_SESSION['idVisiteur']= $matricule; 
 	$_SESSION['nom']= $nom;
 	$_SESSION['prenom']= $prenom;
+	$_SESSION['role']= 'visiteur';
 }
 
 /**
@@ -33,7 +34,7 @@ function connecterVisiteur($matricule,$nom,$prenom){
  * @return vrai ou faux 
  */
 function estConnecteResponsable(){
-  // A compléter
+  return isset($_SESSION['idResponsable']);
 }
 /**
  * Enregistre dans une variable session les infos d'un responsable
@@ -43,7 +44,10 @@ function estConnecteResponsable(){
  * @param $prenom
  */
 function connecterResponsable($matricule,$nom,$prenom){
-  // A compléter
+  $_SESSION['idResponsable']= $matricule; 
+	$_SESSION['nom']= $nom;
+	$_SESSION['prenom']= $prenom;
+	$_SESSION['role']= 'responsable';
 }
 
 /**
@@ -52,6 +56,7 @@ function connecterResponsable($matricule,$nom,$prenom){
  */
 function estConnecteDelegue(){
   // A compléter
+  return isset($_SESSION['idDelegue']);
 }
 /**
  * Enregistre dans une variable session les infos d'un délégué régional
@@ -60,11 +65,11 @@ function estConnecteDelegue(){
  * @param $nom
  * @param $prenom
  */
-function connecterDelegue($matricule,$nom,$prenom){
-  // A compléter
-  $_SESSION['idDelegue']= $matricule; 
+function enregistrerDelegue($matricule, $nom, $prenom) {
+	$_SESSION['idDelegue']= $matricule;
 	$_SESSION['nom']= $nom;
 	$_SESSION['prenom']= $prenom;
+	$_SESSION['role']= 'delegue';
 }
 
 /**
@@ -187,5 +192,68 @@ function nbErreurs(){
 	}
 }
 
+/**
+ * Validates and returns date range parameters
+ * @param $dateDebut : start date from request
+ * @param $dateFin : end date from request
+ * @return array with validated dates or false if invalid
+ */
+function validerPlage($dateDebut, $dateFin) {
+	$dateDebut = trim(htmlentities($dateDebut ?? ''));
+	$dateFin = trim(htmlentities($dateFin ?? ''));
+	
+	if(empty($dateDebut) || empty($dateFin)){
+		ajouterErreur("Les deux dates sont obligatoires");
+		return false;
+	}
+	
+	if(strtotime($dateDebut) === false || strtotime($dateFin) === false){
+		ajouterErreur("Format de date invalide");
+		return false;
+	}
+	
+	if(strtotime($dateDebut) > strtotime($dateFin)){
+		ajouterErreur("La date de début doit être antérieure à la date de fin");
+		return false;
+	}
+	
+	return [
+		'dateDebut' => $dateDebut,
+		'dateFin' => $dateFin
+	];
+}
+
+/**
+ * Gets current user session data based on role
+ * @param $pdoGsb : database connection
+ * @return array with user data or false if not authenticated
+ */
+function obtenirUtilisateur($pdoGsb) {
+	$user = [
+		'type' => null,
+		'id' => null,
+		'nom' => $_SESSION['nom'] ?? null,
+		'prenom' => $_SESSION['prenom'] ?? null,
+		'region' => null,
+		'sector' => null
+	];
+	
+	if(estConnecteVisiteur()) {
+		$user['type'] = 'visiteur';
+		$user['id'] = $_SESSION['idVisiteur'];
+	} elseif(estConnecteDelegue()) {
+		$user['type'] = 'delegue';
+		$user['id'] = $_SESSION['idDelegue'];
+		$user['region'] = $pdoGsb->getDelegateRegion($user['id']);
+	} elseif(estConnecteResponsable()) {
+		$user['type'] = 'responsable';
+		$user['id'] = $_SESSION['idResponsable'];
+		$user['sector'] = $pdoGsb->getResponsibleSector($user['id']);
+	} else {
+		return false;
+	}
+	
+	return $user;
+}
 
 ?>

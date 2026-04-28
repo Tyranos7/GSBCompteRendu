@@ -1,4 +1,13 @@
-﻿    <!-- Division pour le sommaire -->
+﻿<?php
+/**
+ * VISITOR MENU SIDEBAR
+ * Displays navigation menu for Visitor role
+ * Options: Add report, Modify report, Add practitioner, Consult practitioners,
+ * Consult medications, Search reports by period
+ * Used by: c_connexion.php, c_ajouterCompteRendu.php, c_modifierCompteRendu.php, etc.
+ */
+?>
+    <!-- Division pour le sommaire -->
     <div id="menuGauche">
      <div id="infosUtil">
     
@@ -15,21 +24,18 @@
              
            </li>
            <li class="smenu">
-              <a href="index.php?uc=majCompteRendu&action=modifier" title="Modification compte-rendu">Modification compte-rendu</a>
+              <a href="index.php?uc=majCompteRendu&action=selectionner" title="Modification compte-rendu">Modification compte-rendu</a>
            </li>		   
            <li class="smenu">
-              <a href="index.php?uc=consulterPraticien&action= " title="Consultation des praticiens">Consultation Praticiens</a>
+              <a href="index.php?uc=consulterPraticien&action=consulterPraticien " title="Consultation des praticiens">Consultation Praticiens</a>
            </li>
            <li class="smenu">
-              <a href="index.php?uc=ajouterPraticien&action= " title="Saisie praticien">Ajout praticien</a>
+              <a href="index.php?uc=ajouterPraticien&action=ajouterPraticien " title="Saisie praticien">Ajout praticien</a>
            </li>		   
            <li class="smenu">
-              <a href="index.php?uc=consulterMedicament&action=" title="Consultation des médicaments">Consultation Médicaments</a>
+              <a href="index.php?uc=consulterMedicament&action=consulterMedicament" title="Consultation des médicaments">Consultation Médicaments</a>
            </li>	
            <li class="smenu">
-              <a href="index.php?uc=consulterCompteRenduPeriode&action=" title="Consultation des compte-rendus">Compte-rendus d'une période</a>
-           </li>	
-			<li class="smenu">
               <a href="index.php?uc=connexion&action=deconnexion" title="Se déconnecter">Déconnexion</a>
            </li>
 		

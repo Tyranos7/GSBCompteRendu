@@ -1,4 +1,11 @@
-﻿<div id="contenu">
+﻿<?php
+/**
+ * LOGIN FORM VIEW
+ * Displays login credentials form for all user types
+ * Used by: c_connexion.php
+ */
+?>
+<div id="contenu">
       <h2>Identification utilisateur</h2>
 
 

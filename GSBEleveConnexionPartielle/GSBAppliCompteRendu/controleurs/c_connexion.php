@@ -1,4 +1,9 @@
 ﻿<?php
+/**
+ * CONTRÔLEUR DE CONNEXION/DÉCONNEXION
+ * Gère l'authentification pour tous les rôles : Visiteur, Délégué, Responsable
+ */
+
 if(!isset($_REQUEST['action'])){
 	$_REQUEST['action'] = 'demandeConnexion';
 }
@@ -29,7 +34,7 @@ switch($action){
 
                 connecterResponsable($matricule, $nom, $prenom);
 
-                include(VIEWSPATH."v_sommaireResponsable.php");
+                include(VIEWSPATH."v_sommaire.php");
                 include(VIEWSPATH."v_accueil.php");
 			}
 			else{
@@ -40,9 +45,8 @@ switch($action){
                 $nom = $delegue['nom'];
                 $prenom = $delegue['prenom'];
 
-                connecterDelegue($matricule, $nom, $prenom);
-
-                include(VIEWSPATH."v_sommaireDelegue.php");
+                enregistrerDelegue($matricule, $nom, $prenom);
+                include(VIEWSPATH."v_sommaire.php");
                 include(VIEWSPATH."v_accueil.php");					
 				}
 				else{
@@ -52,7 +56,7 @@ switch($action){
 					$nom =  $visiteur['nom'];
 					$prenom = $visiteur['prenom'];
 					connecterVisiteur($matricule,$nom,$prenom);
-					include(VIEWSPATH."v_sommaireVisiteur.php");
+					include(VIEWSPATH."v_sommaire.php");
 					include(VIEWSPATH."v_accueil.php");
 				}
 			}
